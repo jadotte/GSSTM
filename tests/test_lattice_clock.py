@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lattice_clock import LatticeClockSystem, demo_callback
+from lattice_clock import LatticeClockSystem, demo_callback, flight_data_callback
 from sunset_time_calc import SunsetCalculator
 
 if __name__ == "__main__":
@@ -28,18 +28,15 @@ if __name__ == "__main__":
     lattice.add_sunset_grid("SF_Bay_Area", sf_grid)
     lattice.add_sunset_grid("NY_Area", ny_grid)
 
-    # For flight data demo, we would also import:
-    # from flight_data_parser import FlightDataFetcher
-    # fetcher = FlightDataFetcher()
+    from flight_data_aq import FlightDataFetcher
+    fetcher = FlightDataFetcher()
 
     # Register a simple callback for demo
     lattice.register_callback(demo_callback)
 
-    # Register a more complex callback for handling flight data
-    # Using a lambda to pass additional arguments
-    # lattice.register_callback(
-    #     lambda timestamp: flight_data_callback(timestamp, fetcher, calculator, lattice)
-    # )
+    lattice.register_callback(
+        lambda timestamp: flight_data_callback(timestamp, fetcher, calculator, lattice)
+    )
 
     # Start the clock
     print("Starting Lattice Clock demonstration...")
