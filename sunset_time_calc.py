@@ -4,7 +4,7 @@ import time
 import json
 import os
 from datetime import datetime, timedelta, timezone
-
+from helisol import Sun
 
 class SunsetCalculator:
     """Calculate sunset times for specific locations and dates"""
@@ -16,6 +16,9 @@ class SunsetCalculator:
         Args:
             cache_file: File to store cached sunset times
         """
+        if cache_file is None:
+            import os
+            cache_file = "/tmp/sunset_cache.json" if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') else "sunset_cache.json"
         self.cache_file = cache_file
         self.cache = self._load_cache()
 
@@ -31,8 +34,10 @@ class SunsetCalculator:
 
     def _save_cache(self):
         """Save the cached sunset times to file"""
+        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+            return
         try:
-            with open(self.cache_file, "w") as f:
+            with open(self.cache_file, 'w') as f:
                 json.dump(self.cache, f, indent=2)
         except IOError as e:
             print(f"Error saving cache file: {e}")
@@ -52,24 +57,19 @@ class SunsetCalculator:
         if date is None:
             date = datetime.now().date()
 
-        # Create a cache key
         cache_key = f"{latitude:.4f}_{longitude:.4f}_{date.isoformat()}"
 
-        # Check if we have this sunset time cached
         if cache_key in self.cache:
             sunset_timestamp = self.cache[cache_key]
             return datetime.fromtimestamp(sunset_timestamp)
 
-        # Get day of year (Jan 1 = 1, Feb 1 = 32, etc.)
         day_of_year = date.timetuple().tm_yday
 
-        # Convert latitude and longitude to radians
         lat_rad = math.radians(latitude)
         lng_rad = math.radians(longitude)
 
-        # Calculate the declination of the sun
-        # This is an approximation; for more precision, use a proper astronomical library
-        declination = 0.4093 * math.sin((2 * math.pi * (284 + day_of_year)) / 365)
+        sun = Sun()
+        declination = sun.declination
 
         # Calculate the sunset hour angle
         hour_angle = math.acos(-math.tan(lat_rad) * math.tan(declination))
@@ -81,7 +81,6 @@ class SunsetCalculator:
         timezone_offset = round(longitude / 15)
         local_sunset_hour = sunset_hour - longitude / 15 + timezone_offset
 
-        # Create a datetime object
         sunset_minutes = (local_sunset_hour - int(local_sunset_hour)) * 60
         sunset_time = datetime.combine(
             date,
@@ -122,7 +121,6 @@ class SunsetCalculator:
         while lat <= max_lat:
             lon = min_lon
             while lon <= max_lon:
-                # Calculate sunset for this grid point
                 sunset = self.calculate_sunset(lat, lon, date)
 
                 # Store in grid
@@ -151,7 +149,6 @@ class SunsetCalculator:
             Datetime object representing the sunset time
         """
         if grid:
-            # Find closest grid point
             lat_grid = round(latitude / grid_size) * grid_size
             lon_grid = round(longitude / grid_size) * grid_size
             grid_key = f"{lat_grid:.4f}_{lon_grid:.4f}"

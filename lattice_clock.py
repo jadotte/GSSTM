@@ -170,7 +170,6 @@ class LatticeClockSystem:
         if not sunset:
             return None  # Unknown
 
-        # Convert to same timezone for comparison
         sunset = sunset.astimezone(now.tzinfo)
         return now > sunset
 
@@ -180,7 +179,6 @@ def demo_callback(timestamp):
     """Example callback function that prints the current time"""
     print(f"TICK: {timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
-
 def flight_data_callback(timestamp, fetcher, calculator, lattice_clock):
     """
     Callback that processes flight data on each tick
@@ -188,50 +186,82 @@ def flight_data_callback(timestamp, fetcher, calculator, lattice_clock):
     Args:
         timestamp: Current datetime from the lattice clock
         fetcher: FlightDataFetcher instance
-        calculator: SunsetCalculator instance
+        calculator: PulseGenerator instance (from osp.py)
         lattice_clock: LatticeClockSystem instance
     """
-    # This would fetch real flight data in production
-    # For demo, we'll just print a message and simulate a few aircraft
     print(f"Processing flight data at {timestamp.strftime('%H:%M:%S.%f')[:-3]}")
 
-    # In a real implementation, we would:
-    # 1. Fetch latest aircraft positions
-    # 2. For each aircraft, generate a Plus Code
-    # 3. Check if the aircraft is flying after sunset
-    # 4. Store and log the data
-
-    # Simulated aircraft for demonstration
-    simulated_aircraft = [
-        {
-            "callsign": "UAL123",
-            "lat": 37.7749,
-            "lon": -122.4194,
-            "alt": 10000,
-        },  # San Francisco
-        {
-            "callsign": "DAL456",
-            "lat": 40.7128,
-            "lon": -74.0060,
-            "alt": 8000,
-        },  # New York
-        {
-            "callsign": "SWA789",
-            "lat": 33.9416,
-            "lon": -118.4085,
-            "alt": 5000,
-        },  # Los Angeles
-    ]
-
-    for aircraft in simulated_aircraft:
-        # Check if after sunset at aircraft position
-        is_after_sunset = lattice_clock.is_after_sunset(
-            aircraft["lat"], aircraft["lon"]
-        )
-
-        # This would be a Plus Code in production
-        # For demo, we'll just print the result
-        status = "after sunset" if is_after_sunset else "before sunset"
-        print(
-            f"  Aircraft {aircraft['callsign']} at {aircraft['lat']:.4f}, {aircraft['lon']:.4f} is {status}"
-        )
+    try:
+        # Using the fetch_current_states method from FlightDataFetcher
+        aircraft_data = fetcher.fetch_current_states()
+        
+        if not aircraft_data:
+            print("No aircraft data available")
+            return
+            
+        print(f"Processing {len(aircraft_data)} aircraft")
+        
+        # Create a directory for storing flight data if it doesn't exist
+        import os
+        storage_dir = "flight_data"
+        os.makedirs(storage_dir, exist_ok=True)
+        
+        date_str = timestamp.strftime("%Y-%m-%d")
+        file_path = os.path.join(storage_dir, f"flight_records_{date_str}.jsonl")
+        
+        for aircraft in aircraft_data:
+            try:
+                callsign = aircraft.get("callsign", "UNKNOWN")
+                latitude = aircraft.get("latitude")
+                longitude = aircraft.get("longitude")
+                altitude = aircraft.get("altitude", 0)
+                if latitude is None or longitude is None:
+                    print(f"  Skipping aircraft {callsign}: missing position data")
+                    continue
+                plus_code = aircraft.get("plus_code")
+                sunset_time = lattice_clock.get_sunset_for_position(latitude, longitude)
+                if sunset_time:
+                    is_after_sunset = timestamp > sunset_time
+                    sunset_status = "after sunset" if is_after_sunset else "before sunset"
+                    if is_after_sunset:
+                        pulse_data = calculator.generate_pulse(
+                            latitude, longitude, sunset_time, timestamp
+                        )
+                    else:
+                        pulse_data = None
+                else:
+                    sunset_status = "sunset time unknown"
+                    pulse_data = None
+                flight_record = {
+                    "timestamp": timestamp.timestamp(),
+                    "icao24": aircraft.get("icao24"),
+                    "callsign": callsign,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "altitude": altitude,
+                    "velocity": aircraft.get("velocity"),
+                    "heading": aircraft.get("heading"),
+                    "vertical_rate": aircraft.get("vertical_rate"),
+                    "on_ground": aircraft.get("on_ground"),
+                    "origin_country": aircraft.get("origin_country"),
+                    "plus_code": plus_code,
+                    "sunset_status": sunset_status,
+                    "sunset_time": sunset_time.timestamp() if sunset_time else None,
+                    "pulse_data": pulse_data
+                }
+                print(f"  Aircraft {callsign} at {latitude:.4f}, {longitude:.4f} ({plus_code}) is {sunset_status}")
+                with open(file_path, "a") as f:
+                    f.write(json.dumps(flight_record) + "\n")
+                if pulse_data:
+                    pulse_dir = os.path.join(storage_dir, "pulses")
+                    os.makedirs(pulse_dir, exist_ok=True)
+                    pulse_id = pulse_data["id"]
+                    pulse_path = os.path.join(pulse_dir, f"{pulse_id}.json")
+                    with open(pulse_path, "w") as f:
+                        json.dump(pulse_data, f, indent=2)
+                    print(f"    Generated pulse: {pulse_data['pulse_hash']} (cycle {pulse_data['cycle_number']})")
+            except Exception as e:
+                print(f"  Error processing aircraft {aircraft.get('callsign', 'UNKNOWN')}: {e}")
+    
+    except Exception as e:
+        print(f"Error in flight data callback: {e}")

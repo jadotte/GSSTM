@@ -45,9 +45,7 @@ class FlightDataFetcher:
                     f"Fetching flight data (attempt {attempt + 1}/{retry_attempts})..."
                 )
 
-                # Use the official API to get states
                 if bbox:
-                    # Unpack the bounding box
                     min_lat, min_lon, max_lat, max_lon = bbox
                     print(
                         f"Using bounding box: min_lat={min_lat}, max_lat={max_lat}, min_lon={min_lon}, max_lon={max_lon}"
@@ -64,7 +62,7 @@ class FlightDataFetcher:
                     print(
                         "Error: API returned None - possible rate limiting or connection issue"
                     )
-                    continue  # Try again if we have retry attempts left
+                    continue
 
                 # Process the data and add Plus Codes
                 if states and states.states:
@@ -72,11 +70,10 @@ class FlightDataFetcher:
                     return processed_data
                 else:
                     print("No aircraft states found in the response")
-                    continue  # Try again if we have retry attempts left
+                    continue
 
             except Exception as e:
                 print(f"Error fetching flight data: {e}")
-                # Continue to next retry attempt
 
         # If we get here, all retries failed
         print("All API attempts failed. Returning empty result.")
@@ -104,7 +101,6 @@ class FlightDataFetcher:
             if state.longitude is None or state.latitude is None:
                 continue
 
-            # Generate Plus Code for this position
             plus_code = encode(state.latitude, state.longitude)
 
             # Note: Changed from 'heading' to 'true_track' to match OpenSky API
@@ -118,9 +114,9 @@ class FlightDataFetcher:
                 "latitude": state.latitude,
                 "altitude": state.baro_altitude,  # Barometric altitude in meters
                 "on_ground": state.on_ground,
-                "velocity": state.velocity,  # m/s
+                "velocity": state.velocity,  # meters/sec
                 "heading": state.true_track,  # Using true_track instead of heading
-                "vertical_rate": state.vertical_rate,  # m/s
+                "vertical_rate": state.vertical_rate,  # meters/sec
                 "squawk": state.squawk,  # transponder code
                 "origin_country": state.origin_country,
                 "plus_code": plus_code,
@@ -143,72 +139,3 @@ class FlightDataFetcher:
         print(f"Saved {len(data)} aircraft records to {filename}")
 
 
-# Example usage
-if __name__ == "__main__":
-    import argparse
-
-    # Set up command line arguments
-    parser = argparse.ArgumentParser(
-        description="Fetch flight data from OpenSky Network"
-    )
-    parser.add_argument("--username", "-u", help="OpenSky Network username")
-    parser.add_argument("--password", "-p", help="OpenSky Network password")
-    parser.add_argument(
-        "--retries", "-r", type=int, default=3, help="Number of retry attempts"
-    )
-    parser.add_argument(
-        "--delay", "-d", type=int, default=15, help="Seconds to wait between retries"
-    )
-    parser.add_argument(
-        "--global",
-        "-g",
-        action="store_true",
-        help="Fetch global data instead of SF area",
-    )
-    args = parser.parse_args()
-
-    # Print information about anonymous vs. authenticated access
-    if args.username and args.password:
-        print(f"Using authenticated access with username: {args.username}")
-    else:
-        print("Warning: Using anonymous access (limited to 1 request per 10 seconds)")
-
-    # Initialize the fetcher
-    fetcher = FlightDataFetcher(username=args.username, password=args.password)
-
-    # Define a bounding box for the San Francisco Bay Area
-    sf_bbox = [37.0, -123.0, 38.0, -121.0]
-
-    # Fetch current flight data
-    if getattr(args, "global"):
-        flight_data = fetcher.fetch_current_states(
-            retry_attempts=args.retries, retry_delay=args.delay
-        )
-    else:
-        flight_data = fetcher.fetch_current_states(
-            bbox=sf_bbox, retry_attempts=args.retries, retry_delay=args.delay
-        )
-
-    # Display summary
-    print(f"Retrieved data for {len(flight_data)} aircraft")
-
-    if flight_data:
-        # Print sample data for the first few aircraft
-        for i, aircraft in enumerate(flight_data[:5]):
-            print(f"\nAircraft {i + 1}:")
-            print(f"  ICAO: {aircraft['icao24']}")
-            print(f"  Callsign: {aircraft['callsign']}")
-            print(f"  Position: ({aircraft['latitude']}, {aircraft['longitude']})")
-            print(f"  Plus Code: {aircraft['plus_code']}")
-            print(f"  Altitude: {aircraft['altitude']} meters")
-            print(f"  Speed: {aircraft['velocity']} m/s")
-
-        # Save all data to file
-        fetcher.save_to_file(flight_data)
-        print("\nScript completed successfully")
-    else:
-        print("\nNo aircraft data found. Possible reasons:")
-        print("1. The OpenSky Network API might be experiencing issues")
-        print("2. Your IP might be temporarily rate-limited")
-        print("3. Try using authentication for more reliable access")
-        print("4. Consider using the enhanced version with REST client fallback")

@@ -82,15 +82,15 @@ class PulseGenerator:
         Returns:
             A dictionary containing the pulse data
         """
-        # Generate the sunset-specific sequence
+        if sunset_time.tzinfo is None:
+            sunset_time = sunset_time.replace(tzinfo=timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
         sequence = self.generate_sunset_sequence(latitude, longitude, sunset_time)
-
-        # In a real implementation, we would use the current_time to determine
-        # where in the 6000-second cascade we are, but for this demo we'll
-        # just use a simplified approach
 
         # Simulate position in the cascade (0 to cascade_length-1)
         seconds_since_sunset = max(0, int((current_time - sunset_time).total_seconds()))
+        cycle_number = seconds_since_sunset // self.cascade_length
         position = seconds_since_sunset % self.cascade_length
 
         # Extract a segment of the sequence based on position
@@ -109,6 +109,7 @@ class PulseGenerator:
             "longitude": longitude,
             "sunset_time": sunset_time.timestamp(),
             "cascade_position": position,
+            "cycle_number": cycle_number,
             "pulse_hash": pulse.hex()[:16],  # Use first 16 chars of hex for readability
         }
 
